@@ -1,0 +1,170 @@
+name: email-platform
+
+x-backend-env: &backend-env
+  env_file:
+    - ../.env
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: email
+      POSTGRES_PASSWORD: email
+      POSTGRES_DB: email_platform
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U email -d email_platform"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # S3-compatible object storage for local development only.
+  # adobe/s3mock keeps data on disk under ROOT so restarts persist state.
+  object-storage:
+    image: adobe/s3mock:latest
+    environment:
+      # HTTP_PORT controls the plain-HTTP listener (SERVER_PORT would enable TLS).
+      HTTP_PORT: "9000"
+      ROOT: /s3mockroot
+      SILENT: "1"
+    volumes:
+      - s3mockdata:/s3mockroot
+    ports:
+      - "9000:9000"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -q -O- http://localhost:9000/ >/dev/null 2>&1 || exit 1",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  createbucket:
+    build:
+      context: ..
+      dockerfile: infra/docker/Dockerfile.api
+    <<: *backend-env
+    depends_on:
+      object-storage:
+        condition: service_healthy
+    restart: "no"
+    command:
+      - python
+      - -c
+      - |
+          import os
+          import boto3
+          client = boto3.client(
+              "s3",
+              endpoint_url=os.environ["OBJECT_STORAGE_ENDPOINT"],
+              aws_access_key_id=os.environ["OBJECT_STORAGE_ACCESS_KEY"],
+              aws_secret_access_key=os.environ["OBJECT_STORAGE_SECRET_KEY"],
+              region_name=os.environ.get("OBJECT_STORAGE_REGION", "us-east-1"),
+          )
+          bucket = os.environ["OBJECT_STORAGE_BUCKET"]
+          try:
+              client.head_bucket(Bucket=bucket)
+              print(f"bucket already exists: {bucket}")
+          except Exception:
+              client.create_bucket(Bucket=bucket)
+              print(f"bucket created: {bucket}")
+
+  migrate:
+    build:
+      context: ..
+      dockerfile: infra/docker/Dockerfile.api
+    <<: *backend-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+
+  api:
+    build:
+      context: ..
+      dockerfile: infra/docker/Dockerfile.api
+    <<: *backend-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../services/api:/app/services/api
+    command:
+      ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+  worker:
+    build:
+      context: ..
+      dockerfile: infra/docker/Dockerfile.api
+    <<: *backend-env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    volumes:
+      - ../services/api:/app/services/api
+    command:
+      ["celery", "-A", "app.workers.celery_app.celery_app", "worker",
+       "-l", "info", "--concurrency", "2"]
+
+  scheduler:
+    build:
+      context: ..
+      dockerfile: infra/docker/Dockerfile.api
+    <<: *backend-env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    volumes:
+      - ../services/api:/app/services/api
+    command: ["python", "-m", "app.workers.scheduler"]
+
+  web:
+    build:
+      context: ..
+      dockerfile: infra/docker/Dockerfile.web
+    env_file:
+      - ../.env
+    depends_on:
+      - api
+    ports:
+      - "3000:3000"
+    volumes:
+      - ../apps/web:/app/apps/web
+      - ../packages:/app/packages
+      - web_node_modules:/app/node_modules
+    command: ["npm", "run", "dev", "-w", "apps/web", "--", "-H", "0.0.0.0"]
+
+volumes:
+  pgdata:
+  redisdata:
+  s3mockdata:
+  web_node_modules:

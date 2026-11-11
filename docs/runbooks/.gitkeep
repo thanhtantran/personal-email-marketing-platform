@@ -1,0 +1,4 @@
+# Runbooks
+
+Operational runbooks are added from Stage 7 onward: backup/restore, incident response, provider
+setup and credential rotation.

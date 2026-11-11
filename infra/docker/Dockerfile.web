@@ -1,0 +1,23 @@
+# Next.js web image. In local Compose the source is bind-mounted and the
+# container runs `next dev`; a production build should be produced at image
+# build time in the production profile.
+FROM node:20-alpine
+
+ENV NEXT_TELEMETRY_DISABLED=1
+
+WORKDIR /app
+
+# Workspace manifests first for better layer caching.
+COPY package.json ./
+COPY apps/web/package.json ./apps/web/package.json
+COPY packages/api-client/package.json ./packages/api-client/package.json
+COPY packages/shared-schemas/package.json ./packages/shared-schemas/package.json
+
+RUN npm install
+
+COPY apps/web ./apps/web
+COPY packages ./packages
+
+EXPOSE 3000
+
+CMD ["npm", "run", "dev", "-w", "apps/web", "--", "-H", "0.0.0.0"]

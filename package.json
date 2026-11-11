@@ -1,0 +1,19 @@
+{
+  "name": "email-platform",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Personal Email Marketing Platform - monorepo root",
+  "workspaces": [
+    "apps/web",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w apps/web",
+    "build": "npm run build -w apps/web",
+    "lint": "npm run lint -w apps/web",
+    "typecheck": "npm run typecheck -w apps/web"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

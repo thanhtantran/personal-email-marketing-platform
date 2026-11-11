@@ -1,0 +1,3 @@
+# Migration revisions are generated here by Alembic (autogenerate or manual).
+# The first revision (tenants, users, memberships, sessions, audit log) is added
+# in Stage 1.
