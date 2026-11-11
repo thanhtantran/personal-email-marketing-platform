@@ -3,8 +3,11 @@ export default function HomePage() {
     <main>
       <h1>Email Marketing Platform</h1>
       <p>
-        Phase 1 foundation. The operator workspace, audience, templates, campaigns and provider
-        gateway are delivered in the following implementation stages.
+        Phase 1 foundation. The operator workspace, audience, campaigns and provider gateway are
+        delivered in the following implementation stages.
+      </p>
+      <p>
+        <a href="/templates">Templates</a>
       </p>
       <p>
         API health: <a href="http://localhost:8000/healthz">/healthz</a>
