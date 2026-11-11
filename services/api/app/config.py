@@ -78,6 +78,16 @@ class Settings(BaseSettings):
     provider_default: str = "resend"
     tracking_enabled: bool = False
 
+    # ---------------------------------------------------------------- content
+    # MJML CLI binary used for server-side template rendering (see Dockerfile.api).
+    mjml_binary: str = "mjml"
+    mjml_timeout_seconds: int = 20
+    template_max_source_bytes: int = 512_000
+    # Optional isolated origin for rendering previews in the browser.
+    preview_origin: str = ""
+    # Comma-separated recipients permitted for test sends (owner email is implicit).
+    test_send_allowlist: str = ""
+
     # ------------------------------------------------------- provisional limits
     import_max_file_mb: int = 50
     import_max_rows: int = 200_000
@@ -114,6 +124,16 @@ class Settings(BaseSettings):
     @property
     def owner_configured(self) -> bool:
         return bool(self.owner_google_sub or self.owner_email)
+
+    @property
+    def verified_test_recipients(self) -> set[str]:
+        """Addresses allowed to receive a test send; the owner email is implicit."""
+        recipients = {
+            item.strip().lower() for item in self.test_send_allowlist.split(",") if item.strip()
+        }
+        if self.owner_email.strip():
+            recipients.add(self.owner_email.strip().lower())
+        return recipients
 
     def require_production_safety(self) -> list[str]:
         """Return a list of fatal configuration problems for production."""
