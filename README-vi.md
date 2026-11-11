@@ -22,6 +22,7 @@ tenant độc lập.
 - [Cấu trúc repository](#cấu-trúc-repository)
 - [Lộ trình](#lộ-trình)
 - [Nguyên tắc bất biến (không thương lượng)](#nguyên-tắc-bất-biến-không-thương-lượng)
+- [Giấy phép](#giấy-phép)
 
 ## Trạng thái hiện tại
 
@@ -201,3 +202,7 @@ Thứ tự triển khai theo phụ thuộc; xem
   không failover sang account khác.
 - Suppression là nguồn chân lý và được kiểm tra lại ngay trước mỗi lần submit lên provider.
 - Số liệu về quota, giá, và quyền hạn không bao giờ bị hard-code thành cam kết sản phẩm.
+
+## Giấy phép
+
+Phát hành theo [GNU Lesser General Public License v2.1](LICENSE).

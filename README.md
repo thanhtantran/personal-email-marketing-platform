@@ -21,6 +21,7 @@ outcomes. The data model is tenant-ready so a later Phase 2 can serve multiple i
 - [Repository layout](#repository-layout)
 - [Roadmap](#roadmap)
 - [Guardrails (non-negotiable)](#guardrails-non-negotiable)
+- [License](#license)
 
 ## Current status
 
@@ -198,3 +199,7 @@ Delivery is dependency-ordered; see
 - An ambiguous submit outcome becomes `unknown`; no blind retry or account failover.
 - Suppression is authoritative and rechecked immediately before every provider submission.
 - Quota, pricing, and permission facts are never hard-coded as product guarantees.
+
+## License
+
+Released under the [GNU Lesser General Public License v2.1](LICENSE).
