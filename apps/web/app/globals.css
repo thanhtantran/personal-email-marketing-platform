@@ -12,7 +12,7 @@ a {
 }
 
 main {
-  max-width: 720px;
+  max-width: 1040px;
   margin: 0 auto;
-  padding: 48px 24px;
+  padding: 32px 24px 64px;
 }
