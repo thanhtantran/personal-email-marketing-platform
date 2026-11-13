@@ -59,6 +59,7 @@ Tài liệu bổ trợ:
 
 | Tài liệu | Nội dung |
 |---|---|
+| [docs/getting-started.md](docs/getting-started.md) | Hướng dẫn cài đặt và chạy thử từng bước (Docker Compose và không Docker) |
 | [docs/decisions/](docs/decisions/) | Architecture decision record (ADR 0001-0007) |
 | [docs/threat-model.md](docs/threat-model.md) | Threat model Phase 1, được rà soát mỗi stage |
 | [docs/data-classification.md](docs/data-classification.md) | Quy tắc mã hoá, logging, lưu trữ và truy cập theo từng nhóm dữ liệu |

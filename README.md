@@ -58,6 +58,7 @@ Supporting material:
 
 | Document | Contents |
 |---|---|
+| [docs/getting-started.md](docs/getting-started.md) | Step-by-step local install guide (Docker Compose and non-Docker) |
 | [docs/decisions/](docs/decisions/) | Architecture decision records (ADR 0001-0007) |
 | [docs/threat-model.md](docs/threat-model.md) | Phase 1 threat model, reviewed each stage |
 | [docs/data-classification.md](docs/data-classification.md) | Encryption, logging, retention, and access rules per data class |
