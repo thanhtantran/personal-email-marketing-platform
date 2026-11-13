@@ -12,6 +12,7 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -74,6 +75,10 @@ class ProviderAccount(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             name="uq_provider_accounts_external_ref",
         ),
         UniqueConstraint("tenant_id", "id", name="uq_provider_accounts_tenant_id"),
+        #: Public, unguessable handle used by the webhook route. It is not the
+        #: account id, so leaking a webhook URL never discloses an internal key
+        #: (SPEC.md section 8).
+        UniqueConstraint("webhook_public_id", name="uq_provider_accounts_webhook_public_id"),
     )
 
     tenant_id: Mapped[uuid.UUID] = mapped_column(
@@ -96,6 +101,16 @@ class ProviderAccount(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         DateTime(timezone=True), nullable=True
     )
     health_state: Mapped[str] = mapped_column(String(32), nullable=False, default="unknown")
+    webhook_public_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        nullable=False,
+        default=uuid.uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    #: Encrypted webhook signing secret (same envelope as a credential). It is
+    #: write-only and never returned by an API, so verification is the only read.
+    webhook_secret_ciphertext: Mapped[str | None] = mapped_column(String(4096), nullable=True)
+    webhook_secret_key_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class ProviderCredential(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):

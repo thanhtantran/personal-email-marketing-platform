@@ -250,6 +250,66 @@ class CampaignRecipientRepository(TenantScopedRepository):
         return list(result.scalars().all())
 
     # ------------------------------------------------------------ dispatch
+    async def get(self, recipient_id: uuid.UUID) -> CampaignRecipient | None:
+        result = await self.session.execute(
+            select(CampaignRecipient).where(
+                CampaignRecipient.tenant_id == self.tenant_id,
+                CampaignRecipient.id == recipient_id,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def get_by_provider_message_id(
+        self, provider_message_id: str, *, provider_account_id: uuid.UUID | None = None
+    ) -> CampaignRecipient | None:
+        """Resolve the ledger row a provider event refers to.
+
+        Provider event ids are only unique within an account, so the caller
+        passes ``provider_account_id`` when the webhook carries one. A message id
+        that matches several recipients (a resend campaign) is ambiguous and must
+        be resolved by the caller rather than guessed.
+        """
+        stmt = select(CampaignRecipient).where(
+            CampaignRecipient.tenant_id == self.tenant_id,
+            CampaignRecipient.provider_message_id == provider_message_id,
+        )
+        if provider_account_id is not None:
+            stmt = stmt.where(CampaignRecipient.provider_account_id == provider_account_id)
+        stmt = stmt.limit(2)
+        result = await self.session.execute(stmt)
+        rows = list(result.scalars().all())
+        return rows[0] if len(rows) == 1 else None
+
+    async def get_latest_by_email(self, normalized_email: str) -> CampaignRecipient | None:
+        """Most recent ledger row for an address, used when an event has no id.
+
+        A provider event that omits the message id is matched on the address the
+        send was snapshotted with; the newest row wins so an event refers to the
+        most recent campaign rather than an older one.
+        """
+        result = await self.session.execute(
+            select(CampaignRecipient)
+            .where(
+                CampaignRecipient.tenant_id == self.tenant_id,
+                CampaignRecipient.email_snapshot == normalized_email,
+            )
+            .order_by(CampaignRecipient.created_at.desc(), CampaignRecipient.id.desc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
+    async def counts_by_status(self, campaign_id: uuid.UUID) -> dict[str, int]:
+        """Recipient ledger totals per status, used by analytics."""
+        result = await self.session.execute(
+            select(CampaignRecipient.status, func.count())
+            .where(
+                CampaignRecipient.tenant_id == self.tenant_id,
+                CampaignRecipient.campaign_id == campaign_id,
+            )
+            .group_by(CampaignRecipient.status)
+        )
+        return {row[0]: int(row[1]) for row in result.all()}
+
     async def get_for_update(self, recipient_id: uuid.UUID) -> CampaignRecipient | None:
         """Lock one ledger row for a submission, so two workers cannot both send."""
         result = await self.session.execute(
@@ -390,4 +450,34 @@ class CampaignRecipientRepository(TenantScopedRepository):
         recipient.next_attempt_at = None
         recipient.outcome_at = when
         recipient.error_code = error_code
+        await self.session.flush()
+
+    async def apply_event_status(
+        self,
+        recipient: CampaignRecipient,
+        *,
+        status: str,
+        when: datetime,
+        error_code: str | None = None,
+    ) -> None:
+        """Move a recipient to the status a provider event implies.
+
+        A provider event is a *report* about an already-submitted message, not a
+        new submission, so the attempt counter is deliberately not incremented.
+        A failure or unresolved state clears ``next_attempt_at`` so the
+        dispatcher cannot retry past an authoritative verdict (SPEC.md
+        invariant 6).
+        """
+        recipient.status = status
+        if status == RECIPIENT_STATUS_FAILED:
+            recipient.next_attempt_at = None
+            recipient.outcome_at = when
+            recipient.error_code = error_code or recipient.error_code
+        elif status == RECIPIENT_STATUS_ACCEPTED:
+            recipient.next_attempt_at = None
+            if recipient.accepted_at is None:
+                recipient.accepted_at = when
+        elif status == RECIPIENT_STATUS_UNKNOWN:
+            recipient.next_attempt_at = None
+            recipient.outcome_at = when
         await self.session.flush()

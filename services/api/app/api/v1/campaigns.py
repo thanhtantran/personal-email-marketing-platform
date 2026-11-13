@@ -18,6 +18,7 @@ from app.auth.dependencies import TenantContext, get_current_context, verify_csr
 from app.config import Settings, get_settings
 from app.db.models import Campaign
 from app.db.session import get_db
+from app.domain.analytics import CampaignAnalyticsService
 from app.domain.campaign.lifecycle import CAMPAIGN_STATUSES
 from app.domain.campaign.scheduling import AMBIGUOUS_POLICIES, RESOLUTION_UNAMBIGUOUS
 from app.domain.campaign.service import CampaignService
@@ -38,6 +39,7 @@ from app.schemas.campaign import (
     ScheduleRequest,
     ScheduleResult,
 )
+from app.schemas.event import CampaignAnalyticsOut
 
 router = APIRouter(tags=["campaigns"])
 
@@ -319,6 +321,27 @@ async def list_recipients(
         next_cursor=next_cursor,
         total=await service.recipients.count_for_campaign(campaign_id, status=status),
     )
+
+
+@router.get("/campaigns/{campaign_id}/analytics", response_model=CampaignAnalyticsOut)
+async def campaign_analytics(
+    campaign_id: uuid.UUID,
+    context: TenantContext = Depends(get_current_context),
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> CampaignAnalyticsOut:
+    """Ledger state plus provider-reported delivery, with reading caveats.
+
+    ``accepted`` is a provider acceptance and ``delivered`` is a provider-reported
+    delivery; the two are never conflated and an unresolved recipient stays
+    ``unknown`` rather than being assumed delivered (SPEC.md sections 7 and 10).
+    """
+    service = CampaignService(db, context.tenant.id, settings)
+    await service.get(campaign_id)
+    summary = await CampaignAnalyticsService(db, context.tenant.id, settings).for_campaign(
+        campaign_id
+    )
+    return CampaignAnalyticsOut.model_validate(summary)
 
 
 async def _record_transition(

@@ -24,6 +24,13 @@ class ObjectStorage(Protocol):
     def head(self, key: str) -> ObjectInfo | None:
         """Return object metadata, or ``None`` when the key does not exist."""
 
+    def put_bytes(self, key: str, data: bytes, *, content_type: str = "application/json") -> None:
+        """Write an object fully.
+
+        Used for the bounded, TTL-managed raw webhook payload; callers must keep
+        the body small and treat a failure as fatal for that acceptance path.
+        """
+
     def get_bytes(self, key: str) -> bytes:
         """Read an object fully. Callers must bound size before calling."""
 

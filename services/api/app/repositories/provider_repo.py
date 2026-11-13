@@ -247,3 +247,22 @@ class ProviderRoutingControlRepository(TenantScopedRepository):
         control.paused_at = datetime.now(UTC) if paused else None
         await self.session.flush()
         return control
+
+
+async def get_account_by_webhook_public_id(
+    session: AsyncSession, *, provider: str, public_id: uuid.UUID
+) -> ProviderAccount | None:
+    """Resolve a webhook target without a tenant context.
+
+    The webhook route is public and unauthenticated, so the account is found by
+    its unguessable public handle and the tenant is read *from* that row rather
+    than trusted from the request (SPEC.md section 8). Signature verification
+    still runs before any durable write.
+    """
+    result = await session.execute(
+        select(ProviderAccount).where(
+            ProviderAccount.provider == provider,
+            ProviderAccount.webhook_public_id == public_id,
+        )
+    )
+    return result.scalar_one_or_none()

@@ -9,6 +9,7 @@ from __future__ import annotations
 from app.db.models.audit import AuditLog
 from app.db.models.campaign import Campaign, CampaignRecipient, CampaignSnapshot
 from app.db.models.contact import Contact, ContactTag, Suppression, Tag
+from app.db.models.event import MessageEvent, WebhookEvent
 from app.db.models.idempotency import IdempotencyKey
 from app.db.models.import_job import ImportJob, ImportRow
 from app.db.models.membership import Membership
@@ -37,6 +38,7 @@ __all__ = [
     "ImportJob",
     "ImportRow",
     "Membership",
+    "MessageEvent",
     "OutboxEvent",
     "ProviderAccount",
     "ProviderCredential",
@@ -48,4 +50,5 @@ __all__ = [
     "Template",
     "Tenant",
     "User",
+    "WebhookEvent",
 ]

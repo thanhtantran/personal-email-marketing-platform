@@ -50,6 +50,18 @@ class RateLimitedError(AppError):
     code = "rate_limited"
 
 
+class ServiceUnavailableError(AppError):
+    """A dependency needed to complete the request is not available.
+
+    Used when accepting work would be unsafe without that dependency: a webhook
+    whose raw payload cannot be retained must fail closed so the provider
+    retries, rather than being acknowledged and lost.
+    """
+
+    status_code = 503
+    code = "service_unavailable"
+
+
 def problem_response(request: Request, *, status_code: int, code: str, detail: str,
                      extra: dict[str, Any] | None = None) -> JSONResponse:
     body: dict[str, Any] = {

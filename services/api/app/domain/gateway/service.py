@@ -20,7 +20,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime, timedelta
 
@@ -49,6 +49,7 @@ from app.db.models.provider import (
 )
 from app.domain.audience.consent import is_eligible
 from app.domain.content.personalization import render, values_from_contact
+from app.domain.events.unsubscribe import unsubscribe_headers
 from app.domain.gateway import eligibility, routing
 from app.domain.gateway.capacity import RateGate, capacity_from_account, reserve_capacity
 from app.domain.gateway.retry import (
@@ -153,7 +154,11 @@ class _RecipientCheck:
 
 
 def build_outbound_message(
-    content: dict, *, to_email: str, contact: object | None = None
+    content: dict,
+    *,
+    to_email: str,
+    contact: object | None = None,
+    headers: Mapping[str, str] | None = None,
 ) -> OutboundMessage:
     """Render the frozen snapshot content for one recipient.
 
@@ -173,6 +178,7 @@ def build_outbound_message(
         html=body_html,
         text=body_text,
         reply_to=content.get("reply_to") or None,
+        headers=headers or {},
     )
 
 
@@ -414,8 +420,21 @@ class ProviderGateway:
             )
 
         account = selection.account
+        headers: Mapping[str, str] = {}
+        if message_class == MESSAGE_CLASS_MARKETING:
+            headers = unsubscribe_headers(
+                base_url=self.settings.api_base_url,
+                secret=self.settings.session_key,
+                tenant_id=self.tenant_id,
+                recipient_id=recipient.id,
+                campaign_id=recipient.campaign_id,
+                contact_id=recipient.contact_id,
+            )
         message = build_outbound_message(
-            content, to_email=recipient.email_snapshot, contact=check.contact
+            content,
+            to_email=recipient.email_snapshot,
+            contact=check.contact,
+            headers=headers,
         )
         attempt_no = await self.attempts.next_attempt_no(recipient.id)
         attempt = await self.attempts.create_pending(

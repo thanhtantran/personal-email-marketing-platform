@@ -48,6 +48,11 @@ class S3ObjectStorage:
             raise
         return ObjectInfo(key=key, size=int(response.get("ContentLength", 0)))
 
+    def put_bytes(self, key: str, data: bytes, *, content_type: str = "application/json") -> None:
+        self._client.put_object(
+            Bucket=self._bucket, Key=key, Body=data, ContentType=content_type
+        )
+
     def get_bytes(self, key: str) -> bytes:
         response = self._client.get_object(Bucket=self._bucket, Key=key)
         return response["Body"].read()

@@ -13,9 +13,11 @@ import uuid
 from app.config import get_settings
 from app.db.session import SessionFactory
 from app.domain.campaign.lifecycle import ensure_transition
+from app.domain.events.processing import WebhookProcessingService
 from app.logging import get_logger
 from app.redis_client import get_redis
 from app.repositories.campaign_repo import CampaignRepository
+from app.storage.s3 import get_storage
 from app.workers.celery_app import celery_app
 from app.workers.dispatch import dispatch_campaign
 
@@ -72,3 +74,25 @@ async def _dispatch_campaign(
             redis=get_redis(),
         )
     return report.summary()
+
+
+@celery_app.task(name="app.workers.tasks.process_webhook")
+def process_webhook_task(tenant_id: str, webhook_event_id: str) -> str:
+    """Normalize one accepted webhook delivery and apply its effects.
+
+    Idempotent end to end: the row is re-read under a lock, inserts ignore
+    conflicts and suppression is an idempotent upsert, so an outbox redelivery or
+    a retried task converges on the same state (SPEC.md invariant 8).
+    """
+    return asyncio.run(
+        _process_webhook(uuid.UUID(tenant_id), uuid.UUID(webhook_event_id))
+    )
+
+
+async def _process_webhook(tenant_id: uuid.UUID, webhook_event_id: uuid.UUID) -> str:
+    settings = get_settings()
+    async with SessionFactory() as session:
+        report = await WebhookProcessingService(session, tenant_id, settings).process(
+            webhook_event_id, storage=get_storage()
+        )
+    return report.status

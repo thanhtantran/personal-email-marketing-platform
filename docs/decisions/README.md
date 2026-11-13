@@ -14,6 +14,7 @@ ARCHITECTURE in the same change when a decision alters a contract or invariant.
 | [0006](0006-first-provider-resend.md) | First provider adapter (Resend) | Accepted |
 | [0007](0007-tracking-default-off.md) | Open/click tracking default | Accepted |
 | [0008](0008-provider-gateway-routing.md) | Provider gateway: compliant capacity routing | Accepted |
+| [0009](0009-webhook-intake-and-unsubscribe.md) | Webhook intake, event normalization and one-click unsubscribe | Accepted |
 
 ## Template
 

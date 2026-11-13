@@ -17,6 +17,9 @@ celery_app = Celery(
     "email_platform",
     broker=settings.celery_broker_url,
     backend=settings.celery_result_backend,
+    # Task modules are named explicitly: the worker command only imports this
+    # module, so without ``include`` no task would ever be registered.
+    include=["app.workers.tasks"],
 )
 
 celery_app.conf.update(

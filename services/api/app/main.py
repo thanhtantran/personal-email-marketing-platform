@@ -17,6 +17,8 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 from app.api.v1.router import api_router
+from app.api.v1.unsubscribe import router as unsubscribe_router
+from app.api.v1.webhooks import router as webhooks_router
 from app.bootstrap import bootstrap_workspace
 from app.config import get_settings
 from app.db.session import SessionFactory, engine
@@ -130,3 +132,8 @@ async def readyz() -> JSONResponse:
 
 
 app.include_router(api_router)
+# Public, unauthenticated endpoints addressed by signed/opaque handles: provider
+# webhooks are verified by signature and one-click unsubscribe by signed token,
+# so neither can piggyback on a session (SPEC.md sections 4 and 8).
+app.include_router(webhooks_router)
+app.include_router(unsubscribe_router)

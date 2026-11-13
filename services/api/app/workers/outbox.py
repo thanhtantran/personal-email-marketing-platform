@@ -16,6 +16,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
+from app.domain.events.intake import WEBHOOK_OUTBOX_EVENT
 from app.logging import get_logger
 from app.repositories.outbox_repo import OutboxRepository
 
@@ -25,6 +26,7 @@ logger = get_logger(__name__)
 # is marked failed rather than retried forever.
 EVENT_TASKS: dict[str, str] = {
     "campaign.dispatch": "app.workers.tasks.dispatch_campaign",
+    WEBHOOK_OUTBOX_EVENT: "app.workers.tasks.process_webhook",
 }
 
 MAX_BACKOFF_SECONDS = 300
