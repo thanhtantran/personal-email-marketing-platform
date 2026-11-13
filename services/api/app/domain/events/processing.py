@@ -39,6 +39,7 @@ from app.domain.events.vocabulary import (
     NORMALIZED_EVENT_TYPES,
     SUPPRESSION_REASON_BY_EVENT,
 )
+from app.observability.metrics import RECIPIENT_EVENTS
 from app.providers.contract import NormalizedProviderEvent
 from app.providers.registry import get_adapter
 from app.repositories.campaign_repo import CampaignRecipientRepository
@@ -192,7 +193,7 @@ class WebhookProcessingService:
                 provider_message_id=item.provider_message_id,
                 recipient_email=item.recipient_email,
             )
-        return await self.messages.add_ignore(
+        inserted = await self.messages.add_ignore(
             campaign_id=recipient.campaign_id,
             recipient_id=recipient.id,
             provider_account_id=account.id,
@@ -205,6 +206,8 @@ class WebhookProcessingService:
                 "provider_message_id": item.provider_message_id,
             },
         )
+        RECIPIENT_EVENTS.inc(event_type=event_type, result="inserted" if inserted else "duplicate")
+        return inserted
 
     async def _reduce(self, recipient: CampaignRecipient, item: NormalizedProviderEvent) -> None:
         target = reduce_recipient_status(recipient.status, event_type=item.event_type)

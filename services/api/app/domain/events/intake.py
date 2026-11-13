@@ -30,6 +30,7 @@ from app.errors import (
     ServiceUnavailableError,
     ValidationAppError,
 )
+from app.observability.metrics import WEBHOOK_INTAKE
 from app.providers.contract import NormalizedProviderEvent, ProviderAdapter, Secret
 from app.providers.registry import get_adapter
 from app.repositories.event_repo import WebhookEventRepository
@@ -82,6 +83,7 @@ class WebhookIntakeService:
         adapter = self._adapter(account)
         secret = self._webhook_secret(account)
         if not adapter.verify_webhook(headers, body, secret):
+            WEBHOOK_INTAKE.inc(result="rejected")
             raise ForbiddenError("Webhook signature verification failed")
 
         digest = hashlib.sha256(body).hexdigest()
@@ -104,6 +106,7 @@ class WebhookIntakeService:
         )
         if webhook_event_id is None:
             # Already accepted: a replay must not enqueue a second processing job.
+            WEBHOOK_INTAKE.inc(result="duplicate")
             await self.session.commit()
             return WebhookAcceptance(
                 webhook_event_id=None,
@@ -124,6 +127,7 @@ class WebhookIntakeService:
             dedupe_key=f"{WEBHOOK_OUTBOX_EVENT}:{webhook_event_id}",
         )
         await self.session.commit()
+        WEBHOOK_INTAKE.inc(result="accepted")
         return WebhookAcceptance(
             webhook_event_id=webhook_event_id,
             duplicate=False,

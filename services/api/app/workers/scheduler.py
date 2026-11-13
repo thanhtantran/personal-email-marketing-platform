@@ -5,6 +5,11 @@ PostgreSQL advisory lock makes accidental duplicate scheduler instances
 harmless, and ``FOR UPDATE SKIP LOCKED`` plus the outbox dedupe key means a
 restart cannot lose or double-run due work (ARCHITECTURE.md section 6,
 SPEC.md section 5).
+
+The same lock also serializes the data retention jobs (SPEC.md section 8,
+``app.workers.retention``): running them here rather than in an extra Compose
+service keeps one owner for scheduled maintenance and means retention cannot run
+twice for two schedulers.
 """
 
 from __future__ import annotations
@@ -12,7 +17,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import signal
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -25,6 +30,7 @@ from app.logging import configure_logging, get_logger
 from app.repositories.audit_repo import AuditRepository
 from app.repositories.campaign_repo import claim_due_campaigns
 from app.workers.outbox import dispatch_pending
+from app.workers.retention import run_retention
 
 logger = get_logger(__name__)
 
@@ -93,6 +99,20 @@ class _Stopper:
         return self._event.is_set()
 
 
+async def _retention_pass(settings: Settings, *, now: datetime) -> datetime:
+    """Run the retention jobs and return the next due time.
+
+    A failed pass is logged and retried at the next cadence rather than hot
+    looping; the jobs are idempotent, so a delayed pass is never a data loss.
+    """
+    next_due = now + timedelta(seconds=settings.retention_interval_seconds)
+    try:
+        await run_retention(settings, now=now)
+    except Exception:  # noqa: BLE001 - maintenance must not kill dispatch
+        logger.exception("retention pass failed")
+    return next_due
+
+
 async def run(settings: Settings) -> None:
     stopper = _Stopper()
     stopper.install()
@@ -104,6 +124,8 @@ async def run(settings: Settings) -> None:
                 await asyncio.sleep(interval)
                 continue
             logger.info("scheduler acquired lock")
+            # Retention runs on startup and then on its own cadence.
+            next_retention = datetime.now(UTC)
             try:
                 while not stopper.stopped:
                     try:
@@ -115,6 +137,9 @@ async def run(settings: Settings) -> None:
                             )
                     except Exception:  # noqa: BLE001 - one bad pass must not kill the loop
                         logger.exception("scheduler pass failed")
+                    moment = datetime.now(UTC)
+                    if moment >= next_retention:
+                        next_retention = await _retention_pass(settings, now=moment)
                     await asyncio.sleep(interval)
             finally:
                 with contextlib.suppress(Exception):

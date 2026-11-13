@@ -118,6 +118,15 @@ class Settings(BaseSettings):
     raw_webhook_retention_days: int = 14
     staged_upload_retention_days: int = 7
     import_row_retention_days: int = 90
+    #: How often the single-active scheduler runs the retention jobs. Retention
+    #: is a privacy control, so it is checked on a cadence rather than on demand.
+    retention_interval_seconds: int = 86_400
+
+    # ----------------------------------------------------------- observability
+    #: ``/metrics`` is meant to be scraped over the private network. Disable it
+    #: (or set METRICS_TOKEN) when the API is reachable from anywhere else.
+    metrics_enabled: bool = True
+    metrics_token: str = ""
 
     @field_validator("session_cookie_secure", mode="before")
     @classmethod

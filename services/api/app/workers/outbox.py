@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import Settings
 from app.domain.events.intake import WEBHOOK_OUTBOX_EVENT
 from app.logging import get_logger
+from app.observability.metrics import OUTBOX_PUBLISH
 from app.repositories.outbox_repo import OutboxRepository
 
 logger = get_logger(__name__)
@@ -64,6 +65,7 @@ async def dispatch_pending(
         task_name = task_for(event.event_type)
         if task_name is None:
             await repo.mark_failed(event, error=f"no task mapped for '{event.event_type}'")
+            OUTBOX_PUBLISH.inc(result="unmapped")
             logger.error("outbox event has no task", extra={"event_type": event.event_type})
             continue
         try:
@@ -72,6 +74,7 @@ async def dispatch_pending(
             error = type(exc).__name__
             if event.attempts + 1 >= settings.campaign_outbox_max_attempts:
                 await repo.mark_failed(event, error=error)
+                OUTBOX_PUBLISH.inc(result="failed")
                 logger.error(
                     "outbox event failed permanently",
                     extra={"event_id": str(event.id), "error": error},
@@ -82,12 +85,14 @@ async def dispatch_pending(
                     error=error,
                     retry_at=moment + timedelta(seconds=_backoff_seconds(event.attempts)),
                 )
+                OUTBOX_PUBLISH.inc(result="retry")
                 logger.warning(
                     "outbox publish deferred",
                     extra={"event_id": str(event.id), "error": error},
                 )
             continue
         await repo.mark_published(event, when=moment)
+        OUTBOX_PUBLISH.inc(result="published")
         published += 1
 
     await session.commit()

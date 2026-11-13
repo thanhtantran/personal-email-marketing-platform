@@ -63,7 +63,10 @@ Supporting material:
 | [docs/data-classification.md](docs/data-classification.md) | Encryption, logging, retention, and access rules per data class |
 | [docs/deployment-limits.md](docs/deployment-limits.md) | Provisional operator-tunable limits (not product guarantees) |
 | [docs/provider-evaluation-resend.md](docs/provider-evaluation-resend.md) | First provider review (Resend) |
+| [docs/deployment.md](docs/deployment.md) | Deployment, sender/DNS checklist, upgrade notes, backups |
 | [docs/runbooks/migrations.md](docs/runbooks/migrations.md) | Migration, rollback, backup, and recovery runbook |
+| [docs/runbooks/operations.md](docs/runbooks/operations.md) | Pause/diagnose, alerts, incident response, credential rotation |
+| [docs/release-gates.md](docs/release-gates.md) | Release-gate and Stage 7 exit-gate record |
 
 ## Stack
 

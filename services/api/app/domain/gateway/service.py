@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import time
 import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass, field
@@ -58,6 +59,7 @@ from app.domain.gateway.retry import (
     circuit_health_for,
     classify,
 )
+from app.observability.metrics import PROVIDER_SUBMISSIONS, PROVIDER_SUBMIT_SECONDS
 from app.providers.contract import (
     HEALTH_HEALTHY,
     MessageClass,
@@ -460,6 +462,7 @@ class ProviderGateway:
     ) -> SubmitResult:
         """Call the adapter, mapping a lost response to an ambiguous outcome."""
         adapter = self._adapter_for(account.provider)
+        started = time.perf_counter()
         try:
             return await asyncio.wait_for(
                 adapter.send(secret, message, idempotency_key),
@@ -469,6 +472,10 @@ class ProviderGateway:
             return SubmitResult(outcome=SubmitOutcome.AMBIGUOUS, error_class="timeout")
         except ProviderAdapterError as exc:
             return SubmitResult(outcome=SubmitOutcome.AMBIGUOUS, error_class=type(exc).__name__)
+        finally:
+            PROVIDER_SUBMIT_SECONDS.observe(
+                time.perf_counter() - started, provider=account.provider
+            )
 
     async def _record(
         self,
@@ -481,6 +488,7 @@ class ProviderGateway:
         now: datetime,
     ) -> SubmissionReport:
         decision = classify(result, attempt_no=attempt_no, policy=self.policy)
+        PROVIDER_SUBMISSIONS.inc(provider=account.provider, outcome=result.outcome.value)
 
         if result.outcome is SubmitOutcome.ACCEPTED:
             await self.attempts.record_result(

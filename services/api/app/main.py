@@ -1,16 +1,17 @@
 """FastAPI application entry point.
 
 Wires structured logging, request-id correlation, restrictive CORS, RFC 7807
-error handling, liveness/readiness probes and the v1 API (OAuth, sessions,
-identity, workspace).
+error handling, liveness/readiness probes, the metrics exposition and the v1 API
+(OAuth, sessions, identity, workspace).
 """
 
 from __future__ import annotations
 
+import secrets
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -25,12 +26,16 @@ from app.db.session import SessionFactory, engine
 from app.errors import AppError, app_error_handler, problem_response
 from app.logging import configure_logging, get_logger
 from app.middleware import RequestIDMiddleware
+from app.observability.collectors import collect_scrape_metrics
+from app.observability.metrics import REGISTRY
 from app.redis_client import get_redis
 from app.schemas.identity import HealthDependency, ReadinessOut
 
 settings = get_settings()
 configure_logging(settings)
 logger = get_logger(__name__)
+
+METRICS_CONTENT_TYPE = "text/plain; version=0.0.4; charset=utf-8"
 
 
 @asynccontextmanager
@@ -129,6 +134,35 @@ async def readyz() -> JSONResponse:
         status_code=200 if healthy else 503,
         content=payload.model_dump(mode="json"),
     )
+
+
+@app.get("/metrics", tags=["ops"], include_in_schema=False)
+async def metrics(request: Request) -> Response:
+    """Prometheus text exposition for the operator's monitoring stack.
+
+    The endpoint is unauthenticated by default because it is meant to be scraped
+    over the private network (ARCHITECTURE.md section 12); set ``METRICS_TOKEN``
+    to require a bearer token, or ``METRICS_ENABLED=false`` to remove it. Labels
+    never carry recipient addresses or secrets (SPEC.md section 8).
+    """
+    if not settings.metrics_enabled:
+        return problem_response(
+            request, status_code=404, code="not_found", detail="Metrics are disabled"
+        )
+    if settings.metrics_token and not _metrics_authorized(request, settings.metrics_token):
+        return problem_response(
+            request,
+            status_code=401,
+            code="unauthorized",
+            detail="Metrics require a bearer token",
+        )
+    await collect_scrape_metrics()
+    return Response(content=REGISTRY.render(), media_type=METRICS_CONTENT_TYPE)
+
+
+def _metrics_authorized(request: Request, token: str) -> bool:
+    scheme, _, value = request.headers.get("authorization", "").partition(" ")
+    return scheme.lower() == "bearer" and secrets.compare_digest(value.strip(), token)
 
 
 app.include_router(api_router)
