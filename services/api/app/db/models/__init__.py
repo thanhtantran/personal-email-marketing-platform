@@ -13,6 +13,12 @@ from app.db.models.idempotency import IdempotencyKey
 from app.db.models.import_job import ImportJob, ImportRow
 from app.db.models.membership import Membership
 from app.db.models.outbox import OutboxEvent
+from app.db.models.provider import (
+    ProviderAccount,
+    ProviderCredential,
+    ProviderRoutingControl,
+    SendAttempt,
+)
 from app.db.models.segment import Segment
 from app.db.models.session import AuthSession
 from app.db.models.template import Template
@@ -32,7 +38,11 @@ __all__ = [
     "ImportRow",
     "Membership",
     "OutboxEvent",
+    "ProviderAccount",
+    "ProviderCredential",
+    "ProviderRoutingControl",
     "Segment",
+    "SendAttempt",
     "Suppression",
     "Tag",
     "Template",

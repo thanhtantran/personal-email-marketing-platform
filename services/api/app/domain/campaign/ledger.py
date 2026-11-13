@@ -12,11 +12,25 @@ from __future__ import annotations
 import hashlib
 import uuid
 
-RECIPIENT_STATUS_QUEUED = "queued"
-RECIPIENT_STATUS_ACCEPTED = "accepted"
-RECIPIENT_STATUS_FAILED = "failed"
-RECIPIENT_STATUS_SKIPPED = "skipped"
-RECIPIENT_STATUS_UNKNOWN = "unknown"
+from app.db.models.campaign import (
+    RECIPIENT_STATUS_ACCEPTED,
+    RECIPIENT_STATUS_FAILED,
+    RECIPIENT_STATUS_QUEUED,
+    RECIPIENT_STATUS_RETRY,
+    RECIPIENT_STATUS_SKIPPED,
+    RECIPIENT_STATUS_UNKNOWN,
+)
+
+__all__ = [
+    "RECIPIENT_STATUS_ACCEPTED",
+    "RECIPIENT_STATUS_FAILED",
+    "RECIPIENT_STATUS_QUEUED",
+    "RECIPIENT_STATUS_RETRY",
+    "RECIPIENT_STATUS_SKIPPED",
+    "RECIPIENT_STATUS_UNKNOWN",
+    "ledger_row",
+    "recipient_idempotency_key",
+]
 
 
 def recipient_idempotency_key(campaign_id: uuid.UUID, normalized_email: str) -> str:

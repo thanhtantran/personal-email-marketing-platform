@@ -77,6 +77,13 @@ class Settings(BaseSettings):
     # ---------------------------------------------------------------- sending
     provider_default: str = "resend"
     tracking_enabled: bool = False
+    # Provider gateway: an account's marketing eligibility and its capacity
+    # snapshot are dated facts. Routing excludes an account whose facts are older
+    # than these windows, and a send that cannot route is deferred (never dropped)
+    # for this long before it is retried (SPEC.md section 6).
+    provider_eligibility_ttl_seconds: int = 604_800
+    provider_capacity_ttl_seconds: int = 86_400
+    provider_routing_defer_seconds: int = 900
 
     # ---------------------------------------------------------------- content
     # MJML CLI binary used for server-side template rendering (see Dockerfile.api).

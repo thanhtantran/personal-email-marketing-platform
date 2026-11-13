@@ -31,6 +31,7 @@ from app.domain.campaign.scheduling import (
     resolve_schedule,
 )
 from app.domain.campaign.validation import LaunchCheck, validate_launch
+from app.domain.gateway import ProviderGateway
 from app.errors import ConflictError, NotFoundError, ValidationAppError
 from app.repositories.campaign_repo import (
     CampaignRecipientRepository,
@@ -177,7 +178,7 @@ class CampaignService:
         eligible = (
             await self.segments.eligible_count(segment.definition) if segment is not None else 0
         )
-        provider_eligible, capacity_fresh = self._provider_readiness()
+        provider_eligible, capacity_fresh = await self._provider_readiness()
         return validate_launch(
             campaign,
             template=template,
@@ -187,15 +188,16 @@ class CampaignService:
             capacity_fresh=capacity_fresh,
         )
 
-    def _provider_readiness(self) -> tuple[bool, bool]:
+    async def _provider_readiness(self) -> tuple[bool, bool]:
         """Return ``(provider_eligible, capacity_fresh)`` for the launch gate.
 
-        Provider accounts, their marketing eligibility and capacity snapshots
-        are modelled in Stage 5. Until account rows exist there is nothing to
-        consult, so launch proceeds on the local-only path; Stage 5 replaces
-        this with a gateway query.
+        Both facts come from the provider gateway: it reports whether any account
+        is verified for marketing and whether any of those has a fresh, known
+        capacity snapshot, and it excludes an account whose facts may have gone
+        stale (SPEC.md section 6). Nothing here infers a quota from credentials.
         """
-        return True, True
+        status = await ProviderGateway(self.session, self.tenant_id, self.settings).status()
+        return status.marketing_eligible, status.capacity_fresh
 
     # ----------------------------------------------------------------- launch
     async def launch(
@@ -256,18 +258,7 @@ class CampaignService:
         campaign.launched_at = datetime.now(UTC)
         if template is not None:
             campaign.template_version = template.version
-        await self.outbox.add(
-            tenant_id=self.tenant_id,
-            event_type=OUTBOX_EVENT_DISPATCH,
-            aggregate_type="campaign",
-            aggregate_id=campaign.id,
-            payload={
-                "tenant_id": str(self.tenant_id),
-                "campaign_id": str(campaign.id),
-                "snapshot_version": version,
-            },
-            dedupe_key=f"{OUTBOX_EVENT_DISPATCH}:{campaign.id}:{version}",
-        )
+        await self._enqueue_dispatch(campaign, version=version)
         await self.session.flush()
         return recipient_count
 
@@ -305,6 +296,7 @@ class CampaignService:
         ensure_transition(campaign.status, "sending")
         campaign.status = "sending"
         await self.session.flush()
+        await self._enqueue_dispatch(campaign, suffix="resume")
         return campaign
 
     async def cancel(self, campaign_id: uuid.UUID) -> Campaign:
@@ -329,6 +321,34 @@ class CampaignService:
         return allows_dispatch(campaign.status)
 
     # ---------------------------------------------------------------- helpers
+    async def _enqueue_dispatch(
+        self, campaign: Campaign, *, version: int | None = None, suffix: str | None = None
+    ) -> None:
+        """Enqueue a dispatch event for the campaign's current snapshot.
+
+        The dedupe key makes a replayed launch (same version) or a repeated
+        resume (same second) collapse into one event, so the worker can never be
+        handed duplicate work for the same pass (ARCHITECTURE.md section 7).
+        """
+        if version is None:
+            snapshot = await self.snapshots.latest(campaign.id)
+            version = snapshot.snapshot_version if snapshot is not None else 1
+        dedupe_key = f"{OUTBOX_EVENT_DISPATCH}:{campaign.id}:{version}"
+        if suffix:
+            dedupe_key = f"{dedupe_key}:{suffix}:{int(datetime.now(UTC).timestamp())}"
+        await self.outbox.add(
+            tenant_id=self.tenant_id,
+            event_type=OUTBOX_EVENT_DISPATCH,
+            aggregate_type="campaign",
+            aggregate_id=campaign.id,
+            payload={
+                "tenant_id": str(self.tenant_id),
+                "campaign_id": str(campaign.id),
+                "snapshot_version": version,
+            },
+            dedupe_key=dedupe_key,
+        )
+
     async def _locked(self, campaign_id: uuid.UUID) -> Campaign:
         campaign = await self.campaigns.get_for_update(campaign_id)
         if campaign is None:

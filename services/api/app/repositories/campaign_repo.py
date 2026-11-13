@@ -17,6 +17,14 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Campaign, CampaignRecipient, CampaignSnapshot
+from app.db.models.campaign import (
+    RECIPIENT_DISPATCHABLE_STATUSES,
+    RECIPIENT_STATUS_ACCEPTED,
+    RECIPIENT_STATUS_FAILED,
+    RECIPIENT_STATUS_RETRY,
+    RECIPIENT_STATUS_SKIPPED,
+    RECIPIENT_STATUS_UNKNOWN,
+)
 from app.repositories.base import TenantScopedRepository
 
 
@@ -240,3 +248,146 @@ class CampaignRecipientRepository(TenantScopedRepository):
         ).limit(limit + 1)
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    # ------------------------------------------------------------ dispatch
+    async def get_for_update(self, recipient_id: uuid.UUID) -> CampaignRecipient | None:
+        """Lock one ledger row for a submission, so two workers cannot both send."""
+        result = await self.session.execute(
+            select(CampaignRecipient)
+            .where(
+                CampaignRecipient.tenant_id == self.tenant_id,
+                CampaignRecipient.id == recipient_id,
+            )
+            .with_for_update()
+        )
+        return result.scalar_one_or_none()
+
+    async def list_dispatchable(
+        self, campaign_id: uuid.UUID, *, limit: int
+    ) -> list[CampaignRecipient]:
+        """Recipients this campaign still owes a submission to."""
+        result = await self.session.execute(
+            select(CampaignRecipient)
+            .where(
+                CampaignRecipient.tenant_id == self.tenant_id,
+                CampaignRecipient.campaign_id == campaign_id,
+                CampaignRecipient.status.in_(RECIPIENT_DISPATCHABLE_STATUSES),
+            )
+            .order_by(CampaignRecipient.created_at, CampaignRecipient.id)
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+
+    async def claim_due(
+        self, campaign_id: uuid.UUID, *, limit: int, now: datetime
+    ) -> list[CampaignRecipient]:
+        """Lock recipients whose retry time has arrived, skipping locked rows."""
+        result = await self.session.execute(
+            select(CampaignRecipient)
+            .where(
+                CampaignRecipient.tenant_id == self.tenant_id,
+                CampaignRecipient.campaign_id == campaign_id,
+                CampaignRecipient.status.in_(RECIPIENT_DISPATCHABLE_STATUSES),
+                (CampaignRecipient.next_attempt_at.is_(None))
+                | (CampaignRecipient.next_attempt_at <= now),
+            )
+            .order_by(CampaignRecipient.next_attempt_at, CampaignRecipient.created_at)
+            .limit(limit)
+            .with_for_update(skip_locked=True)
+        )
+        return list(result.scalars().all())
+
+    async def earliest_due(self, campaign_id: uuid.UUID) -> datetime | None:
+        """Earliest ``next_attempt_at`` among recipients still owed a submission.
+
+        Used by the dispatch loop to schedule its next wake-up instead of
+        polling. Recipients never submitted carry no time, so this returns
+        ``None`` when every remaining row is due immediately.
+        """
+        result = await self.session.execute(
+            select(func.min(CampaignRecipient.next_attempt_at)).where(
+                CampaignRecipient.tenant_id == self.tenant_id,
+                CampaignRecipient.campaign_id == campaign_id,
+                CampaignRecipient.status.in_(RECIPIENT_DISPATCHABLE_STATUSES),
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def mark_accepted(
+        self,
+        recipient: CampaignRecipient,
+        *,
+        provider_account_id: uuid.UUID,
+        provider_message_id: str | None,
+        when: datetime,
+    ) -> None:
+        recipient.status = RECIPIENT_STATUS_ACCEPTED
+        recipient.provider_account_id = provider_account_id
+        recipient.provider_message_id = provider_message_id
+        recipient.attempt_count = recipient.attempt_count + 1
+        recipient.accepted_at = when
+        recipient.next_attempt_at = None
+        recipient.error_code = None
+        await self.session.flush()
+
+    async def mark_transient_retry(
+        self,
+        recipient: CampaignRecipient,
+        *,
+        provider_account_id: uuid.UUID | None,
+        error_code: str | None,
+        next_attempt_at: datetime,
+    ) -> None:
+        recipient.status = RECIPIENT_STATUS_RETRY
+        recipient.provider_account_id = provider_account_id
+        recipient.attempt_count = recipient.attempt_count + 1
+        recipient.next_attempt_at = next_attempt_at
+        recipient.error_code = error_code
+        await self.session.flush()
+
+    async def mark_permanent_failure(
+        self,
+        recipient: CampaignRecipient,
+        *,
+        provider_account_id: uuid.UUID,
+        error_code: str | None,
+        when: datetime,
+    ) -> None:
+        recipient.status = RECIPIENT_STATUS_FAILED
+        recipient.provider_account_id = provider_account_id
+        recipient.attempt_count = recipient.attempt_count + 1
+        recipient.next_attempt_at = None
+        recipient.outcome_at = when
+        recipient.error_code = error_code
+        await self.session.flush()
+
+    async def mark_skipped(
+        self, recipient: CampaignRecipient, *, error_code: str | None, when: datetime
+    ) -> None:
+        """Retire a recipient that failed last-minute consent/suppression checks.
+
+        No provider call is made, so the attempt counter is deliberately left
+        untouched: the recipient was never submitted.
+        """
+        recipient.status = RECIPIENT_STATUS_SKIPPED
+        recipient.next_attempt_at = None
+        recipient.outcome_at = when
+        recipient.error_code = error_code
+        await self.session.flush()
+
+    async def mark_unknown(
+        self,
+        recipient: CampaignRecipient,
+        *,
+        provider_account_id: uuid.UUID,
+        error_code: str | None,
+        when: datetime,
+    ) -> None:
+        """Record an ambiguous outcome; no automatic retry is scheduled."""
+        recipient.status = RECIPIENT_STATUS_UNKNOWN
+        recipient.provider_account_id = provider_account_id
+        recipient.attempt_count = recipient.attempt_count + 1
+        recipient.next_attempt_at = None
+        recipient.outcome_at = when
+        recipient.error_code = error_code
+        await self.session.flush()

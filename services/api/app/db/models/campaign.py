@@ -17,6 +17,21 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 from app.db.mixins import CreatedAtMixin, TimestampMixin, UUIDPrimaryKeyMixin
 
+#: Recipient ledger states. ``queued``/``retry`` still await submission;
+#: ``unknown`` means an ambiguous provider outcome that must be reconciled before
+#: any retry (SPEC.md invariant 6).
+RECIPIENT_STATUS_QUEUED = "queued"
+RECIPIENT_STATUS_RETRY = "retry"
+RECIPIENT_STATUS_ACCEPTED = "accepted"
+RECIPIENT_STATUS_FAILED = "failed"
+RECIPIENT_STATUS_SKIPPED = "skipped"
+RECIPIENT_STATUS_UNKNOWN = "unknown"
+#: Statuses that a dispatcher may still pick up.
+RECIPIENT_DISPATCHABLE_STATUSES: tuple[str, ...] = (
+    RECIPIENT_STATUS_QUEUED,
+    RECIPIENT_STATUS_RETRY,
+)
+
 
 class Campaign(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     """A campaign draft and its lifecycle state.
