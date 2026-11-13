@@ -98,6 +98,15 @@ class Settings(BaseSettings):
     send_max_attempts: int = 5
     rate_limit_auth_per_minute: int = 20
 
+    # ------------------------------------------------------- scheduler / outbox
+    # Due-campaign and outbox claiming run on a single-active scheduler held by a
+    # PostgreSQL advisory lock (ARCHITECTURE.md section 6).
+    campaign_scheduler_interval_seconds: int = 30
+    campaign_due_batch_size: int = 50
+    campaign_outbox_batch_size: int = 100
+    campaign_outbox_max_attempts: int = 5
+    scheduler_advisory_lock_key: int = 4217090183
+
     # --------------------------------------------------------------- retention
     raw_webhook_retention_days: int = 14
     staged_upload_retention_days: int = 7

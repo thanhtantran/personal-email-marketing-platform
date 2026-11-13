@@ -8,6 +8,8 @@ from sqlalchemy import func, or_, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Contact, ContactTag, Tag
+from app.domain.audience.consent import eligible_contact_filter
+from app.domain.audience.segments import build_filter
 from app.repositories.base import TenantScopedRepository
 
 
@@ -149,6 +151,31 @@ class ContactRepository(TenantScopedRepository):
             .where(Contact.tenant_id == self.tenant_id, Contact.deleted_at.is_(None))
         )
         return int(result.scalar_one())
+
+    async def list_eligible(
+        self,
+        definition: dict,
+        *,
+        limit: int,
+        after: tuple[str, uuid.UUID] | None = None,
+    ) -> list[Contact]:
+        """Page over contacts that are eligible to receive a marketing send.
+
+        Ordered by ``(normalized_email, id)`` so a cursor of
+        ``(normalized_email, id)`` walks the set in stable bounded batches
+        without skipping or repeating rows as the ledger is built.
+        """
+        stmt = select(Contact).where(
+            eligible_contact_filter(self.tenant_id),
+            build_filter(definition, self.tenant_id),
+        )
+        if after:
+            stmt = stmt.where(
+                tuple_(Contact.normalized_email, Contact.id) > tuple_(*after)
+            )
+        stmt = stmt.order_by(Contact.normalized_email, Contact.id).limit(limit)
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
 
 
 class TagRepository(TenantScopedRepository):
