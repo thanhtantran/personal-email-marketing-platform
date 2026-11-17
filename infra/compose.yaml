@@ -1,5 +1,14 @@
 name: email-platform
 
+# One backend image for api/worker/scheduler/migrate/createbucket.
+# Compose `up --build` otherwise builds the same Dockerfile up to five times
+# in parallel and saturates the NVMe that holds /mnt/ssd/docker.
+x-backend-build: &backend-build
+  image: email-platform-api:local
+  build:
+    context: ..
+    dockerfile: infra/docker/Dockerfile.api
+
 x-backend-env: &backend-env
   env_file:
     - ../.env
@@ -14,7 +23,8 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      # Host 5440 avoids picoERP-db on :5432 (Orange Pi LAN).
+      - "5440:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U email -d email_platform"]
       interval: 5s
@@ -27,7 +37,8 @@ services:
     volumes:
       - redisdata:/data
     ports:
-      - "6379:6379"
+      # Host 6380 keeps default Redis free for other stacks.
+      - "6380:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -46,7 +57,8 @@ services:
     volumes:
       - s3mockdata:/s3mockroot
     ports:
-      - "9000:9000"
+      # Host 9100 avoids ignis on :9000 (Orange Pi LAN).
+      - "9100:9000"
     healthcheck:
       test:
         [
@@ -58,10 +70,7 @@ services:
       retries: 20
 
   createbucket:
-    build:
-      context: ..
-      dockerfile: infra/docker/Dockerfile.api
-    <<: *backend-env
+    <<: [*backend-build, *backend-env]
     depends_on:
       object-storage:
         condition: service_healthy
@@ -88,10 +97,7 @@ services:
               print(f"bucket created: {bucket}")
 
   migrate:
-    build:
-      context: ..
-      dockerfile: infra/docker/Dockerfile.api
-    <<: *backend-env
+    <<: [*backend-build, *backend-env]
     depends_on:
       postgres:
         condition: service_healthy
@@ -99,10 +105,7 @@ services:
     restart: "no"
 
   api:
-    build:
-      context: ..
-      dockerfile: infra/docker/Dockerfile.api
-    <<: *backend-env
+    <<: [*backend-build, *backend-env]
     depends_on:
       postgres:
         condition: service_healthy
@@ -111,17 +114,16 @@ services:
       migrate:
         condition: service_completed_successfully
     ports:
-      - "8000:8000"
+      # Host 8100 avoids picoERP-web on :8000 (Orange Pi LAN).
+      - "8100:8000"
     volumes:
       - ../services/api:/app/services/api
+      - ../secrets:/app/secrets:ro
     command:
       ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 
   worker:
-    build:
-      context: ..
-      dockerfile: infra/docker/Dockerfile.api
-    <<: *backend-env
+    <<: [*backend-build, *backend-env]
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -129,15 +131,13 @@ services:
         condition: service_healthy
     volumes:
       - ../services/api:/app/services/api
+      - ../secrets:/app/secrets:ro
     command:
       ["celery", "-A", "app.workers.celery_app.celery_app", "worker",
        "-l", "info", "--concurrency", "2"]
 
   scheduler:
-    build:
-      context: ..
-      dockerfile: infra/docker/Dockerfile.api
-    <<: *backend-env
+    <<: [*backend-build, *backend-env]
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -145,9 +145,11 @@ services:
         condition: service_healthy
     volumes:
       - ../services/api:/app/services/api
+      - ../secrets:/app/secrets:ro
     command: ["python", "-m", "app.workers.scheduler"]
 
   web:
+    image: email-platform-web:local
     build:
       context: ..
       dockerfile: infra/docker/Dockerfile.web

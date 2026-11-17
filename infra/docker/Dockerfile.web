@@ -13,7 +13,8 @@ COPY apps/web/package.json ./apps/web/package.json
 COPY packages/api-client/package.json ./packages/api-client/package.json
 COPY packages/shared-schemas/package.json ./packages/shared-schemas/package.json
 
-RUN npm install
+# Prefer fewer concurrent npm workers on constrained hosts (NVMe Docker root).
+RUN npm install --no-audit --no-fund --maxsockets=3
 
 COPY apps/web ./apps/web
 COPY packages ./packages

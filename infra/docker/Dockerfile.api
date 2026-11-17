@@ -8,14 +8,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
 # Node.js + MJML CLI are required for server-side MJML rendering of templates.
+# No build-essential: wheels cover the pinned Python deps, and compiling on
+# the NVMe Docker root has dropped the disk under parallel Compose builds.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        build-essential \
-        libpq-dev \
+        libpq5 \
         curl \
         nodejs \
         npm \
-    && npm install -g mjml@4 \
+    && npm install -g --no-audit --no-fund mjml@4 \
     && rm -rf /var/lib/apt/lists/* /root/.npm
 
 WORKDIR /app
@@ -23,7 +24,7 @@ WORKDIR /app
 # Install Python dependencies first for better layer caching.
 COPY pyproject.toml README.md ./
 COPY services ./services
-RUN pip install -e ".[dev]"
+RUN pip install --no-cache-dir -e .
 
 # Migration tooling and the app source.
 COPY alembic.ini ./

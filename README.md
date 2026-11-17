@@ -66,6 +66,7 @@ Supporting material:
 | [docs/provider-evaluation-resend.md](docs/provider-evaluation-resend.md) | First provider review (Resend) |
 | [docs/deployment.md](docs/deployment.md) | Deployment, sender/DNS checklist, upgrade notes, backups |
 | [docs/runbooks/migrations.md](docs/runbooks/migrations.md) | Migration, rollback, backup, and recovery runbook |
+| [docs/runbooks/orangepi-lan.md](docs/runbooks/orangepi-lan.md) | Orange Pi LAN deploy (`192.168.88.140`) |
 | [docs/runbooks/operations.md](docs/runbooks/operations.md) | Pause/diagnose, alerts, incident response, credential rotation |
 | [docs/release-gates.md](docs/release-gates.md) | Release-gate and Stage 7 exit-gate record |
 
@@ -109,7 +110,12 @@ cp .env.example .env      # then fill in OAuth + owner identity values
 docker compose -f infra/compose.yaml up --build
 ```
 
-Services and default ports:
+On the Orange Pi LAN host (`192.168.88.140`), see
+[docs/runbooks/orangepi-lan.md](docs/runbooks/orangepi-lan.md): `.env` uses
+`APP_BASE_URL=http://192.168.88.140:3000`, API is published on `:8100` (avoids
+picoERP on `:8000`), Postgres `:5440`, Redis `:6380`, S3 mock `:9100`.
+
+Services and default ports (stock compose; LAN uses the table in the runbook above):
 
 | Service | URL |
 |---|---|

@@ -66,6 +66,7 @@ Tài liệu bổ trợ:
 | [docs/deployment-limits.md](docs/deployment-limits.md) | Giới hạn tạm thời do người vận hành chỉnh (không phải cam kết sản phẩm) |
 | [docs/provider-evaluation-resend.md](docs/provider-evaluation-resend.md) | Đánh giá provider đầu tiên (Resend) |
 | [docs/runbooks/migrations.md](docs/runbooks/migrations.md) | Runbook migration, rollback, backup và phục hồi |
+| [docs/runbooks/orangepi-lan.md](docs/runbooks/orangepi-lan.md) | Triển khai LAN trên Orange Pi (`192.168.88.140`) |
 
 ## Công nghệ
 
@@ -107,7 +108,12 @@ cp .env.example .env      # sau đó điền giá trị OAuth + owner identity
 docker compose -f infra/compose.yaml up --build
 ```
 
-Service và cổng mặc định:
+Trên Orange Pi LAN (`192.168.88.140`), xem
+[docs/runbooks/orangepi-lan.md](docs/runbooks/orangepi-lan.md): `.env` dùng
+`APP_BASE_URL=http://192.168.88.140:3000`, API publish `:8100` (tránh đụng
+picoERP `:8000`), Postgres `:5440`, Redis `:6380`, S3 mock `:9100`.
+
+Service và cổng mặc định (stock compose; LAN dùng bảng trong runbook trên):
 
 | Service | URL |
 |---|---|
