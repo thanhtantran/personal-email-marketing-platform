@@ -8,7 +8,12 @@ from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import get_current_context, verify_csrf
+from app.auth.dependencies import (
+    clear_session_cookies,
+    get_current_context,
+    set_session_cookies,
+    verify_csrf,
+)
 from app.auth.oidc import GoogleOIDCClient
 from app.auth.service import AuthService
 from app.auth.state import OAuthState, decode_state, encode_state
@@ -20,7 +25,6 @@ from app.redis_client import get_redis
 from app.repositories.audit_repo import AuditRepository
 from app.repositories.session_repo import SessionRepository
 from app.security.rate_limit import enforce_rate_limit
-from app.security.tokens import generate_token
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 logger = get_logger(__name__)
@@ -33,32 +37,6 @@ def _client_ip(request: Request) -> str:
     if forwarded:
         return forwarded.split(",")[0].strip()
     return request.client.host if request.client else "unknown"
-
-
-def _set_session_cookies(response: Response, settings: Settings, token: str, max_age: int) -> None:
-    response.set_cookie(
-        settings.session_cookie_name,
-        token,
-        max_age=max_age,
-        httponly=True,
-        secure=settings.secure_cookies,
-        samesite="lax",
-        path="/",
-    )
-    response.set_cookie(
-        settings.csrf_cookie_name,
-        generate_token(16),
-        max_age=max_age,
-        httponly=False,
-        secure=settings.secure_cookies,
-        samesite="lax",
-        path="/",
-    )
-
-
-def _clear_session_cookies(response: Response, settings: Settings) -> None:
-    response.delete_cookie(settings.session_cookie_name, path="/")
-    response.delete_cookie(settings.csrf_cookie_name, path="/")
 
 
 @router.get("/google/start")
@@ -137,7 +115,7 @@ async def google_callback(
 
     max_age = int((issued.expires_at - datetime.now(UTC)).total_seconds())
     response = RedirectResponse(settings.app_base_url, status_code=302)
-    _set_session_cookies(response, settings, issued.token, max_age)
+    set_session_cookies(response, settings, issued.token, max_age)
     response.delete_cookie(OAUTH_STATE_COOKIE, path="/")
     return response
 
@@ -162,5 +140,5 @@ async def logout(
     await db.commit()
 
     response = Response(status_code=204)
-    _clear_session_cookies(response, settings)
+    clear_session_cookies(response, settings)
     return response

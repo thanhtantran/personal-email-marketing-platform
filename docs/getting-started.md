@@ -20,7 +20,7 @@ Có hai cách:
 | Python 3.12+ | Cách B, và để chạy test | `python --version` |
 | Node.js 20+ | Cách B (frontend), và để render template ngoài Docker | `node --version` |
 | Git | Cả hai | để lấy mã nguồn |
-| Một tài khoản Google | Để đăng nhập owner | dùng cho OAuth |
+| (Tùy chọn) Một tài khoản Google | Phase 2 | Phase 1 không cần: dev tự đăng nhập owner |
 
 Kiểm tra nhanh trên Windows PowerShell:
 
@@ -62,15 +62,24 @@ Copy-Item .env.example .env
 File `.env` **không** được commit (đã nằm trong `.gitignore`). Mặc định trong `.env.example` là các
 giá trị an toàn cho local; bạn chỉ cần sửa một vài biến dưới đây.
 
-### 2.1 Biến tối thiểu để đăng nhập được
+### 2.1 Biến tối thiểu
+
+Phase 1 **không cần** cấu hình Google OAuth: khi `APP_ENV=development` (mặc định), request đầu tiên
+không có session sẽ được **tự động đăng nhập owner** (xem `DEV_AUTO_LOGIN` bên dưới). Google sign-in
+được để lại cho Phase 2.
 
 | Biến | Giá trị cần đặt | Bắt buộc khi nào |
 |---|---|---|
-| `OAUTH_GOOGLE_CLIENT_ID` | Client ID từ Google Cloud Console | Luôn cần để đăng nhập |
-| `OAUTH_GOOGLE_CLIENT_SECRET` | Client Secret tương ứng | Luôn cần để đăng nhập |
-| `OAUTH_GOOGLE_REDIRECT_URI` | `http://localhost:8000/api/v1/auth/google/callback` | Phải khớp với Google Console |
-| `OWNER_EMAIL` | Email Google của bạn (đã xác minh) | Khuyến nghị |
+| `DEV_AUTO_LOGIN` | `true` (đã đặt sẵn trong `.env.example`) | Phase 1 local |
+| `OWNER_EMAIL` | Email dùng làm danh tính owner tự động (tùy chọn) | Khuyến nghị |
 | `SESSION_KEY` | Chuỗi ngẫu nhiên ≥ 32 bytes | Bắt buộc khi `APP_ENV=production` |
+
+> **`DEV_AUTO_LOGIN` là gì**: một request không có session hợp lệ sẽ được tự động gán session **owner**
+> của workspace, nên bạn mở UI là dùng được ngay, không cần bấm gì. Đây là tiện ích **chỉ dành cho
+> local**: API sẽ **từ chối khởi động** nếu `APP_ENV=production` mà `DEV_AUTO_LOGIN=true`
+> (xem `require_production_safety` trong
+> [config.py](file:///e:/Trae/personal-email-marketing-platform/services/api/app/config.py)).
+> Ở chế độ này mọi request đều trở thành owner, nên không kiểm tra được luồng 401/403 trên UI.
 
 Tạo `SESSION_KEY` ngẫu nhiên (PowerShell, kết quả 48 ký tự hex = 48 bytes):
 
@@ -86,11 +95,10 @@ Hoặc (macOS/Linux): `openssl rand -hex 32`
 > `APP_ENV=production` (xem [config.py](file:///e:/Trae/personal-email-marketing-platform/services/api/app/config.py)
 > — `require_production_safety`).
 
-> **Về `OWNER_GOOGLE_SUB` vs `OWNER_EMAIL`**: nếu `OWNER_GOOGLE_SUB` được đặt, hệ thống so khớp
-> `sub` của Google (ổn định, khuyến nghị cho production). Nếu chỉ đặt `OWNER_EMAIL`, hệ thống yêu cầu
-> email đã xác minh và so khớp không phân biệt hoa thường. Nếu **cả hai đều trống và `APP_ENV` là
-> `development`**, lần đăng nhập Google đầu tiên sẽ **tự nhận làm owner** (có cảnh báo trong log) —
-> đây là cách nhanh nhất để thử local.
+> **Về `OWNER_GOOGLE_SUB` vs `OWNER_EMAIL`** (dùng cho luồng Google ở Phase 2): nếu
+> `OWNER_GOOGLE_SUB` được đặt, hệ thống so khớp `sub` của Google (ổn định, khuyến nghị cho
+> production). Nếu chỉ đặt `OWNER_EMAIL`, hệ thống yêu cầu email đã xác minh và so khớp không phân biệt
+> hoa thường. `OWNER_EMAIL` cũng là địa chỉ hiển thị cho owner do `DEV_AUTO_LOGIN` tạo ra.
 
 ### 2.2 Khóa mã hóa (`ENCRYPTION_KEY_REF`) — bắt buộc nếu bạn sẽ thêm provider account
 
@@ -155,9 +163,9 @@ Nếu bạn chạy ở Cách B (không Docker), phải đổi các hostname này
 
 ---
 
-## 3. Tạo Google OAuth credentials
+## 3. (Phase 2) Tạo Google OAuth credentials
 
-Đăng nhập dùng Google OIDC (owner-only), nên cần tạo OAuth client:
+Phase 1 dùng `DEV_AUTO_LOGIN` nên **có thể bỏ qua mục này**. Khi bật lại Google sign-in ở Phase 2:
 
 1. Vào **Google Cloud Console** → **APIs & Services** → **Credentials**.
 2. Nếu chưa có, cấu hình **OAuth consent screen** (loại "External", điền tên app và email hỗ trợ).
@@ -170,6 +178,9 @@ Nếu bạn chạy ở Cách B (không Docker), phải đổi các hostname này
 
 Điểm hay gặp lỗi: giá trị `OAUTH_GOOGLE_REDIRECT_URI` trong `.env` phải **trùng khớp ký tự** với
 redirect URI đã khai trong Google Console, nếu không Google trả về `redirect_uri_mismatch`.
+
+> Endpoint `/api/v1/auth/google/start` và `/google/callback` vẫn còn trong mã nguồn nhưng không được
+> UI dùng ở Phase 1; chúng hoạt động trở lại khi bạn điền OAuth credentials.
 
 ---
 
@@ -295,14 +306,14 @@ Kỳ vọng:
 Sau đó:
 
 1. Mở http://localhost:8000/docs để xem toàn bộ API (`/api/v1/...`).
-2. Mở http://localhost:3000 → bấm đăng nhập Google.
-3. Nếu đăng nhập thất bại, xem mục **Lỗi thường gặp** bên dưới.
+2. Mở http://localhost:3000 → bạn được **đăng nhập tự động** (không cần bấm gì).
+3. Nếu API báo lỗi, xem mục **Lỗi thường gặp** bên dưới.
 
 ---
 
 ## 7. Dùng thử trong UI
 
-Sau khi đăng nhập với tư cách owner:
+Sau khi được đăng nhập tự động với tư cách owner:
 
 | Trang | Việc cần làm |
 |---|---|
@@ -351,9 +362,10 @@ docker compose -f infra/compose.yaml down -v
 | Triệu chứng | Nguyên nhân | Cách xử lý |
 |---|---|---|
 | `/readyz` báo PostgreSQL/Redis down | Container chưa healthy hoặc `.env` sai hostname | Xem `docker compose -f infra/compose.yaml logs postgres redis`; trong Compose hostname phải là `postgres`/`redis`, không phải `localhost` |
-| `api` không start, log báo lỗi config | `APP_ENV=production` nhưng thiếu secret/owner/https | Dùng `APP_ENV=development` cho local, hoặc điền đủ các biến ở mục 2.1 và dùng `https` + KMS |
-| `redirect_uri_mismatch` khi đăng nhập | `OAUTH_GOOGLE_REDIRECT_URI` không khớp Google Console | Đặt lại đúng `http://localhost:8000/api/v1/auth/google/callback` ở cả hai nơi |
-| Sau callback bị chuyển về `/?auth_error=...` | Identity không phải owner, hoặc OAuth bị từ chối | Kiểm tra `OWNER_EMAIL`/`OWNER_GOOGLE_SUB`; email phải đã xác minh; nếu ở dev có thể để trống owner để lần login đầu tự nhận owner |
+| `api` không start, log báo lỗi config | `APP_ENV=production` nhưng thiếu secret/owner/https, hoặc `DEV_AUTO_LOGIN=true` | Dùng `APP_ENV=development` cho local (tắt `DEV_AUTO_LOGIN` khi lên production), hoặc điền đủ các biến ở mục 2.1 và dùng `https` + KMS |
+| UI báo "No active session" dù đã mở web | `DEV_AUTO_LOGIN` đang tắt | Đặt `DEV_AUTO_LOGIN=true` trong `.env` rồi restart `api` (Phase 1 không có màn hình đăng nhập Google) |
+| `redirect_uri_mismatch` khi đăng nhập (Phase 2) | `OAUTH_GOOGLE_REDIRECT_URI` không khớp Google Console | Đặt lại đúng `http://localhost:8000/api/v1/auth/google/callback` ở cả hai nơi |
+| Sau callback bị chuyển về `/?auth_error=...` (Phase 2) | Identity không phải owner, hoặc OAuth bị từ chối | Kiểm tra `OWNER_EMAIL`/`OWNER_GOOGLE_SUB`; email phải đã xác minh; nếu ở dev có thể để trống owner để lần login đầu tự nhận owner |
 | Tạo provider account lỗi `cannot read encryption key file` | `ENCRYPTION_KEY_REF` trỏ tới file không tồn tại trong container | Xem mục 2.2 (dùng hex trực tiếp hoặc mount `secrets/`) |
 | Không thấy bucket / upload lỗi | `createbucket` chưa chạy | `docker compose -f infra/compose.yaml run --rm createbucket` |
 | Cổng 3000/8000/5432/6379/9000 bị chiếm | Trùng service khác trên máy | Tắt service đó, hoặc sửa mapping cổng trong `infra/compose.yaml` |
@@ -385,7 +397,7 @@ docs/runbooks/operations.md  runbook vận hành (pause, cảnh báo, xoay crede
 Hướng dẫn trên là cho **local/thử nghiệm**. Khi triển khai thật, bắt buộc:
 
 - Đặt `APP_ENV=production` (khi đó ứng dụng **fail-closed** nếu thiếu secret mạnh, OAuth, owner,
-  `APP_BASE_URL` dùng `https`, hoặc `ENCRYPTION_KEY_REF` vẫn là `file://`).
+  `APP_BASE_URL` dùng `https`, `ENCRYPTION_KEY_REF` vẫn là `file://`, hoặc `DEV_AUTO_LOGIN` còn bật).
 - Dùng KMS/secret manager thật cho `ENCRYPTION_KEY_REF`, không dùng file local.
 - Thay thế S3 mock bằng object storage thật và bật `OBJECT_STORAGE_USE_TLS=true`.
 - Làm theo [docs/deployment.md](deployment.md) (DNS/SPF/DKIM/DMARC, backup, upgrade) và

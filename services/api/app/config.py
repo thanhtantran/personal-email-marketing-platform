@@ -44,11 +44,20 @@ class Settings(BaseSettings):
     object_storage_use_tls: bool = False
 
     # --------------------------------------------- identity (owner-only P1)
+    # Google OIDC is the owner-only sign-in path. It is not required in Phase 1
+    # development because DEV_AUTO_LOGIN signs the owner in without it; the
+    # OAuth settings feed the Phase 2 sign-in flow.
     oauth_google_client_id: str = ""
     oauth_google_client_secret: str = ""
     oauth_google_redirect_uri: str = "http://localhost:8000/api/v1/auth/google/callback"
     owner_google_sub: str = ""
     owner_email: str = ""
+
+    # --------------------------------------------- developer convenience
+    #: Local-only shortcut: a request that arrives without a valid session is
+    #: signed in as the workspace owner, so Phase 1 can be exercised without
+    #: Google. Refused in production (see ``require_production_safety``).
+    dev_auto_login: bool = False
 
     google_issuer: str = "https://accounts.google.com"
     google_auth_endpoint: str = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -151,6 +160,11 @@ class Settings(BaseSettings):
         return bool(self.owner_google_sub or self.owner_email)
 
     @property
+    def dev_auto_login_enabled(self) -> bool:
+        """Auto-login is a local convenience and must never run in production."""
+        return self.dev_auto_login and not self.is_production
+
+    @property
     def verified_test_recipients(self) -> set[str]:
         """Addresses allowed to receive a test send; the owner email is implicit."""
         recipients = {
@@ -167,6 +181,8 @@ class Settings(BaseSettings):
             return problems
         if self.session_key == INSECURE_SESSION_KEY or len(self.session_key) < 32:
             problems.append("SESSION_KEY must be set to a strong value (>= 32 bytes) in production")
+        if self.dev_auto_login:
+            problems.append("DEV_AUTO_LOGIN must be disabled in production")
         if not self.oauth_google_client_id or not self.oauth_google_client_secret:
             problems.append("Google OAuth client id/secret are required in production")
         if not self.owner_google_sub and not self.owner_email:

@@ -21,6 +21,13 @@ from app.security.tokens import generate_token, hash_token
 
 logger = get_logger(__name__)
 
+#: Subject stored for the owner user provisioned by ``DEV_AUTO_LOGIN``. It is a
+#: fixed placeholder because ``users.google_subject`` is NOT NULL and unique; a
+#: real Google subject always comes from the OIDC flow instead.
+DEV_OWNER_SUBJECT = "dev-auto-login-owner"
+DEV_OWNER_EMAIL = "owner@localhost"
+DEV_OWNER_NAME = "Local Owner"
+
 
 @dataclass(frozen=True)
 class IssuedSession:
@@ -28,6 +35,7 @@ class IssuedSession:
     token: str
     tenant: Tenant
     user: User
+    membership: Membership
     expires_at: datetime
 
 
@@ -74,7 +82,6 @@ class AuthService:
         tenants = TenantRepository(self.session)
         users = UserRepository(self.session)
         memberships = MembershipRepository(self.session)
-        sessions = SessionRepository(self.session)
 
         tenant = await tenants.get_by_slug(self.settings.tenant_slug)
         if tenant is None:
@@ -98,6 +105,59 @@ class AuthService:
             tenant_id=tenant.id, user_id=user.id, role="owner", status="active"
         )
 
+        issued = await self._issue_session(tenant, user, membership, mode="google")
+        logger.info("owner logged in", extra={"user_id": str(user.id), "tenant_id": str(tenant.id)})
+        return issued
+
+    async def dev_owner_login(self) -> IssuedSession:
+        """Sign in the workspace owner without OAuth.
+
+        This is the ``DEV_AUTO_LOGIN`` shortcut that lets Phase 1 run without the
+        Google flow; it refuses to act once the setting is disabled or the app is
+        running in production.
+        """
+        if not self.settings.dev_auto_login_enabled:
+            raise ForbiddenError("Development auto-login is disabled")
+
+        tenants = TenantRepository(self.session)
+        users = UserRepository(self.session)
+        memberships = MembershipRepository(self.session)
+
+        tenant = await tenants.get_by_slug(self.settings.tenant_slug)
+        if tenant is None:
+            tenant = await tenants.create(
+                slug=self.settings.tenant_slug, name=self.settings.tenant_name
+            )
+
+        user = await users.get_by_subject(DEV_OWNER_SUBJECT)
+        if user is None:
+            user = await users.create(
+                google_subject=DEV_OWNER_SUBJECT,
+                email=self.settings.owner_email or DEV_OWNER_EMAIL,
+                display_name=DEV_OWNER_NAME,
+            )
+
+        await users.update_last_login(user)
+        membership: Membership = await memberships.ensure(
+            tenant_id=tenant.id, user_id=user.id, role="owner", status="active"
+        )
+
+        issued = await self._issue_session(tenant, user, membership, mode="dev_auto_login")
+        logger.warning(
+            "development auto-login issued an owner session",
+            extra={"user_id": str(user.id), "tenant_id": str(tenant.id)},
+        )
+        return issued
+
+    async def _issue_session(
+        self,
+        tenant: Tenant,
+        user: User,
+        membership: Membership,
+        *,
+        mode: str,
+    ) -> IssuedSession:
+        sessions = SessionRepository(self.session)
         token = generate_token()
         expires_at = datetime.now(UTC) + timedelta(hours=self.settings.session_absolute_hours)
         record = await sessions.create(
@@ -113,11 +173,15 @@ class AuthService:
             actor_user_id=user.id,
             object_type="session",
             object_id=str(record.id),
-            details={"role": membership.role},
+            details={"role": membership.role, "mode": mode},
         )
 
         await self.session.commit()
-        logger.info("owner logged in", extra={"user_id": str(user.id), "tenant_id": str(tenant.id)})
         return IssuedSession(
-            session=record, token=token, tenant=tenant, user=user, expires_at=expires_at
+            session=record,
+            token=token,
+            tenant=tenant,
+            user=user,
+            membership=membership,
+            expires_at=expires_at,
         )

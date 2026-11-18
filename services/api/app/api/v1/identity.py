@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request
 
-from app.auth.dependencies import TenantContext, get_current_context
+from app.auth.dependencies import TenantContext, csrf_cookie_present, get_current_context
 from app.config import Settings, get_settings
 from app.schemas.identity import MeOut, UserOut, WorkspaceOut
 
@@ -21,7 +21,7 @@ async def get_me(
         user=UserOut.model_validate(context.user),
         workspace=WorkspaceOut.model_validate(context.tenant),
         role=context.membership.role,
-        csrf_token_present=settings.csrf_cookie_name in request.cookies,
+        csrf_token_present=csrf_cookie_present(request, settings),
     )
 
 
