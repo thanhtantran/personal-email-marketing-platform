@@ -63,7 +63,7 @@ export default function ImportsPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  function buildMapping(): ImportMapping {
+  function buildMapping() {
     const attributes: Record<string, string> = {};
     for (const row of attributeRows) {
       const key = row.key.trim();
