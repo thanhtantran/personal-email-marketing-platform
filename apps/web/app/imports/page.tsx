@@ -254,7 +254,7 @@ export default function ImportsPage() {
                 </span>
               ))}
             </span>
-          </Field>
+          </Fieldset>
           <span style={styles.inlineGroup}>
             <button
               type="button"
